@@ -56,6 +56,43 @@ func (gdb *Gdb) Send(operation string, arguments ...string) (map[string]interfac
 	return result, nil
 }
 
+// SendCmd works as Send for cli commands
+func (gdb *Gdb) SendCmd(operation string, arguments ...string) (map[string]interface{}, error) {
+	// atomically increase the sequence number and queue a pending command
+	pending := make(chan map[string]interface{})
+	gdb.mutex.Lock()
+	sequence := strconv.FormatInt(gdb.sequence, 10)
+	gdb.pending[sequence] = pending
+	gdb.sequence++
+	gdb.mutex.Unlock()
+
+	// prepare the command
+	buffer := bytes.NewBufferString(fmt.Sprintf("%s %s", sequence, operation))
+	for _, argument := range arguments {
+		buffer.WriteByte(' ')
+		// quote the argument only if needed because GDB interprets un/quoted
+		// values differently in some contexts, e.g., when the value is a
+		// number('1' vs '"1"') or an option ('--thread' vs '"--thread"')
+		if strings.ContainsAny(argument, "\a\b\f\n\r\t\v\\'\" ") {
+			argument = strconv.Quote(argument)
+		}
+		buffer.WriteString(argument)
+	}
+	buffer.WriteByte('\n')
+
+	// send the command
+	if _, err := gdb.stdin.Write(buffer.Bytes()); err != nil {
+		return nil, err
+	}
+
+	// wait for a response
+	result := <-pending
+	gdb.mutex.Lock()
+	delete(gdb.pending, sequence)
+	gdb.mutex.Unlock()
+	return result, nil
+}
+
 // CheckedSend works like Send, except that if the result returned by
 // gdb has class=error, CheckedSend returns a non-nil error value
 // (containing the gdb error message)

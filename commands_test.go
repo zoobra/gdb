@@ -62,3 +62,28 @@ func TestSend(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestSendCmd(t *testing.T) {
+	var result map[string]interface{}
+
+	// start gdb
+	gdb, err := New(func(notification map[string]interface{}) {
+		onNotification(t, notification)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err = gdb.SendCmd("show", "version")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if class, hasClass := result["class"]; !hasClass || class != "done" {
+		t.Fatal(result, "has not class 'done'")
+	}
+
+	// exit gdb
+	if err := gdb.Exit(); err != nil {
+		t.Fatal(err)
+	}
+}
